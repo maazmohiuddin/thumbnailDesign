@@ -1,0 +1,54 @@
+name: Release desktop backend
+
+# Builds desktop/dist/ARYPlusReelBackend.exe (see desktop/build.mjs) and
+# attaches it to a GitHub Release. Runs on a GitHub-hosted runner rather than
+# any local/sandboxed environment specifically so it can reach nodejs.org
+# freely; only needs npm + nodejs.org, no pkg/nexe GitHub-releases fetch.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create/update (e.g. v1.0.0-desktop)"
+        required: true
+        default: "v1.0.0-desktop"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - run: npm run build:desktop
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          TAG="${{ inputs.tag }}"
+          NOTES="Windows companion app for the ARY+ Thumbnail Studio Instagram Reel path.
+
+          Double-click ARYPlusReelBackend.exe and keep its console window open, then set
+          VITE_REEL_API_BASE_URL=http://127.0.0.1:8787 in your frontend deployment's env vars.
+
+          If Instagram asks for a login on a post, drop a config.json next to the exe:
+          { \"cookiesFromBrowser\": \"chrome\" }
+          (swap in whichever browser you're logged into Instagram with). See README.md for details."
+
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" desktop/dist/ARYPlusReelBackend.exe --clobber --repo "${{ github.repository }}"
+          else
+            gh release create "$TAG" desktop/dist/ARYPlusReelBackend.exe \
+              --title "ARY+ Reel Backend $TAG" \
+              --notes "$NOTES" \
+              --repo "${{ github.repository }}"
+          fi
