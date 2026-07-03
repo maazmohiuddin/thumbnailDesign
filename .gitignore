@@ -4,3 +4,9 @@ dist/
 .DS_Store
 npm-debug.log*
 tsconfig.tsbuildinfo
+
+# desktop/build.mjs build artifacts (regenerate with `npm run build:desktop`)
+desktop/.cache/
+desktop/bundle.cjs
+desktop/sea-prep.blob
+desktop/sea-config.json

@@ -6,13 +6,18 @@
  * seeks the <video> element, so byte-range responses are required).
  */
 import express from "express";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { resolveYtdlp } from "./ytdlp.js";
 
-const PORT = process.env.PORT || 8787;
+const PORT = Number(process.env.PORT) || 8787;
+// Loopback-only: this backend only ever needs to serve the browser tab open
+// on the same machine, and binding 127.0.0.1 (instead of all interfaces)
+// means no LAN exposure and no Windows Firewall prompt on first run.
+const HOST = process.env.HOST || "127.0.0.1";
 const CACHE_DIR = path.join(os.tmpdir(), "aryplus-reels");
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const REEL_URL_PATTERN =
@@ -20,31 +25,7 @@ const REEL_URL_PATTERN =
 
 fs.mkdirSync(CACHE_DIR, { recursive: true });
 
-/** Find a usable yt-dlp invocation once at startup. */
-function detectYtdlp() {
-  const candidates = [
-    ["yt-dlp", []],
-    ["python3", ["-m", "yt_dlp"]],
-  ];
-  for (const [cmd, prefix] of candidates) {
-    try {
-      const r = spawnSync(cmd, [...prefix, "--version"], { encoding: "utf8", timeout: 10000 });
-      if (r.status === 0) return { cmd, prefix, version: r.stdout.trim() };
-    } catch {
-      /* try next */
-    }
-  }
-  return null;
-}
-const ytdlp = detectYtdlp();
-if (!ytdlp) {
-  console.warn(
-    "[server] yt-dlp not found. Install it (`pipx install yt-dlp` or `brew install yt-dlp`) " +
-      "to enable the Instagram Reel path. The custom-image path works regardless."
-  );
-} else {
-  console.log(`[server] yt-dlp ${ytdlp.version} (${ytdlp.cmd})`);
-}
+let ytdlp = null;
 
 /** jobId → { status, progress, error, file } */
 const jobs = new Map();
@@ -134,6 +115,10 @@ app.use((_req, res, next) => {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Range");
   res.setHeader("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges");
+  // Chrome's Local Network Access check gates public-page → localhost fetches
+  // behind this header on the preflight response (the Vercel-hosted frontend
+  // calling this local backend is exactly that case).
+  res.setHeader("Access-Control-Allow-Private-Network", "true");
   next();
 });
 app.options("*", (_req, res) => res.sendStatus(204));
@@ -195,6 +180,26 @@ app.get("/api/video/:id", (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`[server] reel resolver listening on http://localhost:${PORT}`);
-});
+async function main() {
+  ytdlp = await resolveYtdlp();
+  if (!ytdlp) {
+    console.warn(
+      "[server] yt-dlp not found and couldn't be downloaded. The Instagram Reel path is " +
+        "disabled — the custom-image path works regardless."
+    );
+  } else {
+    console.log(`[server] yt-dlp ${ytdlp.version} (${ytdlp.cmd})`);
+  }
+
+  app.listen(PORT, HOST, () => {
+    console.log("");
+    console.log("  ARY+ Thumbnail Studio — reel resolver backend");
+    console.log("  ─────────────────────────────────────────────");
+    console.log(`  Running at http://${HOST}:${PORT}`);
+    console.log("  Keep this window open while using the Instagram Reel step.");
+    console.log("  The custom-image path in the app works with or without this.");
+    console.log("");
+  });
+}
+
+main();

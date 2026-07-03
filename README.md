@@ -78,6 +78,34 @@ To enable the reel path on a static deployment:
 Without step 1–2, reel fetch attempts on the deployed site show a clear inline error pointing at the
 custom-image fallback — they don't silently fail.
 
+### Option: a local desktop companion app instead of a hosted backend
+
+If you'd rather not run a separate always-on server, `desktop/build.mjs` packages `server/index.js`
+into a single **Windows `.exe`** — double-click it, leave the console window open, and it serves the
+reel resolver on `http://127.0.0.1:8787` for the machine it's running on. Set
+`VITE_REEL_API_BASE_URL=http://127.0.0.1:8787` on the Vercel project and redeploy; your Vercel-hosted
+frontend will call straight into it. (Browsers treat `127.0.0.1`/`localhost` as a trustworthy origin, so
+an HTTPS page calling `http://127.0.0.1` isn't blocked as mixed content; the server also sends the
+`Access-Control-Allow-Private-Network` header Chrome's Local Network Access check looks for.)
+
+- **First run needs internet once**: it auto-downloads the official `yt-dlp.exe` from yt-dlp's GitHub
+  releases into a per-user app-data folder and reuses it after that (keeps it current, rather than
+  freezing a copy at build time). A `yt-dlp.exe` dropped next to the app's own `.exe` overrides this.
+- **Binds to loopback only** (`127.0.0.1`), so it never appears on the LAN and Windows won't prompt a
+  Firewall "allow access" dialog.
+- Build it yourself with:
+
+  ```bash
+  npm run build:desktop
+  ```
+
+  This bundles `server/index.js` with esbuild, turns it into a [Node.js Single Executable Application](
+  https://nodejs.org/api/single-executable-applications.html), and injects that into a real Windows
+  `node.exe` downloaded from nodejs.org — no `pkg`/`nexe` involved, so it only depends on nodejs.org
+  and npm. Output: `desktop/dist/ARYPlusReelBackend.exe` (~90 MB — it's a full embedded Node runtime).
+  Windows SmartScreen will flag it as an unrecognized publisher on first launch (expected for any
+  unsigned indie `.exe` — click "More info" → "Run anyway"), unless you code-sign it yourself.
+
 ## Template spec (locked)
 
 | Layer | Geometry | Notes |
