@@ -54,6 +54,30 @@ Open http://localhost:5173.
 1328 × 490). If the brand team ships an updated official export, drop it in at the same path — it is
 placed at 168 × 62 (cover-fit) per the template spec.
 
+## Deploying to Vercel (or any static host)
+
+`vercel.json` builds the frontend as a static Vite app (`npm run build` → `dist/`). That covers the
+**custom-image path completely** — no backend needed.
+
+The **Instagram Reel path will not work out of the box on Vercel.** `server/index.js` is a persistent
+Node process that spawns `yt-dlp` as a child process, caches the MP4 to local disk, and streams it back
+with HTTP Range support — none of which fits Vercel's serverless function model (no persistent
+filesystem across invocations, no arbitrary binaries, execution time limits that don't suit a multi-MB
+video download).
+
+To enable the reel path on a static deployment:
+
+1. Host `server/index.js` somewhere that supports a long-lived process + installing `yt-dlp` — Render,
+   Railway, Fly.io, or a small VPS all work. It's a single `node server/index.js`, listening on `PORT`.
+2. In your Vercel project settings, set the environment variable `VITE_REEL_API_BASE_URL` to that
+   backend's origin (e.g. `https://aryplus-reel-api.onrender.com`) and redeploy. The frontend will call
+   `${VITE_REEL_API_BASE_URL}/api/reel` instead of a same-origin path.
+3. Leave `VITE_REEL_API_BASE_URL` unset for local dev (`npm run dev`) — Vite's dev-server proxy already
+   routes same-origin `/api/*` calls to `server/index.js` on `:8787`.
+
+Without step 1–2, reel fetch attempts on the deployed site show a clear inline error pointing at the
+custom-image fallback — they don't silently fail.
+
 ## Template spec (locked)
 
 | Layer | Geometry | Notes |

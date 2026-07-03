@@ -1,4 +1,15 @@
-/** Client for the reel-resolver backend (see server/index.js). */
+/**
+ * Client for the reel-resolver backend (see server/index.js).
+ *
+ * The backend is a long-lived Node process (spawns yt-dlp, streams large
+ * files) and can't run as a Vercel serverless function. On a static/serverless
+ * deployment (Vercel, Netlify, ...) it must be hosted separately (Render,
+ * Railway, Fly, a VPS — anything with a persistent process and yt-dlp
+ * installed), with its origin passed via VITE_REEL_API_BASE_URL at build
+ * time. Left unset, requests fall back to same-origin `/api/...` (the local
+ * `npm run dev` setup, which proxies to server/index.js).
+ */
+const API_BASE = (import.meta.env.VITE_REEL_API_BASE_URL ?? "").replace(/\/+$/, "");
 
 export const REEL_URL_PATTERN =
   /^https?:\/\/(www\.)?instagram\.com\/(?:[A-Za-z0-9_.]+\/)?(reel|reels|p|tv)\/[A-Za-z0-9_-]+/i;
@@ -27,7 +38,7 @@ async function readJson(res: Response): Promise<Record<string, string>> {
 }
 
 export async function startReelJob(url: string): Promise<{ id: string }> {
-  const res = await fetch("/api/reel", {
+  const res = await fetch(`${API_BASE}/api/reel`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
@@ -41,10 +52,14 @@ export async function startReelJob(url: string): Promise<{ id: string }> {
 }
 
 export async function getReelJob(id: string): Promise<ReelJob> {
-  const res = await fetch(`/api/reel/${encodeURIComponent(id)}`);
+  const res = await fetch(`${API_BASE}/api/reel/${encodeURIComponent(id)}`);
   const body = await readJson(res);
   if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
-  return body as unknown as ReelJob;
+  const job = body as unknown as ReelJob;
+  // videoUrl is server-relative (e.g. "/api/video/<id>"); resolve it against
+  // the same base the job status came from.
+  if (job.videoUrl && API_BASE) job.videoUrl = `${API_BASE}${job.videoUrl}`;
+  return job;
 }
 
 /** Poll a job until it's ready or errors. Reports progress along the way. */
