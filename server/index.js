@@ -27,13 +27,54 @@ fs.mkdirSync(CACHE_DIR, { recursive: true });
 
 let ytdlp = null;
 
+/**
+ * Instagram increasingly gates posts (especially /p/ links, less so /reel/)
+ * behind a logged-in session even for anonymous viewing — yt-dlp then reports
+ * "sent an empty media response" rather than a clear "login required". Both
+ * cases need the same fix: pass yt-dlp a cookie source from a real logged-in
+ * browser session. Configurable two ways (env wins if both are set):
+ *   - env vars YTDLP_COOKIES_BROWSER / YTDLP_COOKIES_FILE (good for hosted
+ *     deployments or `npm run dev`)
+ *   - a sibling config.json next to the executable, e.g.
+ *     { "cookiesFromBrowser": "chrome" } — the only practical option for a
+ *     double-clicked .exe with no terminal to set env vars in.
+ */
+function loadCookieConfig() {
+  let fromFile = {};
+  try {
+    const configPath = path.join(path.dirname(process.execPath), "config.json");
+    fromFile = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  } catch {
+    /* no config.json, or it's invalid — fine, cookies are optional */
+  }
+  return {
+    cookiesFromBrowser: process.env.YTDLP_COOKIES_BROWSER || fromFile.cookiesFromBrowser || null,
+    cookiesFile: process.env.YTDLP_COOKIES_FILE || fromFile.cookiesFile || null,
+  };
+}
+const cookieConfig = loadCookieConfig();
+if (cookieConfig.cookiesFromBrowser || cookieConfig.cookiesFile) {
+  console.log(
+    `[server] using yt-dlp cookies from ${
+      cookieConfig.cookiesFromBrowser ? `browser "${cookieConfig.cookiesFromBrowser}"` : cookieConfig.cookiesFile
+    }`
+  );
+}
+
 /** jobId → { status, progress, error, file } */
 const jobs = new Map();
 
 function friendlyError(stderr) {
   const s = stderr.toLowerCase();
-  if (s.includes("login required") || s.includes("rate-limit") || s.includes("rate limit"))
-    return "Instagram is rate-limiting or requires login for this reel. Try again in a few minutes, or use a custom image instead.";
+  const needsLogin =
+    s.includes("login required") ||
+    s.includes("empty media response") ||
+    (s.includes("cookies") && (s.includes("authentication") || s.includes("rate-limit") || s.includes("rate limit")));
+  if (needsLogin) {
+    return cookieConfig.cookiesFromBrowser || cookieConfig.cookiesFile
+      ? "Instagram still requires a logged-in session for this post even with cookies configured — make sure you're logged into Instagram in that browser, then try again. Otherwise use a custom image."
+      : "Instagram is requiring a logged-in session to view this post. Set YTDLP_COOKIES_BROWSER=chrome (or firefox/edge/brave — whichever browser you're logged into Instagram with) as an environment variable, or add a sibling config.json with {\"cookiesFromBrowser\": \"chrome\"}, then try again. Otherwise use a custom image instead.";
+  }
   if (s.includes("private")) return "This reel is private and can't be fetched. Use a custom image instead.";
   if (s.includes("unavailable") || s.includes("404") || s.includes("not found") || s.includes("deleted"))
     return "This reel appears to be deleted or unavailable. Double-check the URL, or use a custom image.";
@@ -64,6 +105,8 @@ function startJob(url) {
     "--no-part",
     "-f", "mp4/bestvideo*+bestaudio/best",
     "--merge-output-format", "mp4",
+    ...(cookieConfig.cookiesFromBrowser ? ["--cookies-from-browser", cookieConfig.cookiesFromBrowser] : []),
+    ...(cookieConfig.cookiesFile ? ["--cookies", cookieConfig.cookiesFile] : []),
     "-o", file,
     url,
   ];

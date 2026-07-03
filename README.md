@@ -106,6 +106,27 @@ an HTTPS page calling `http://127.0.0.1` isn't blocked as mixed content; the ser
   Windows SmartScreen will flag it as an unrecognized publisher on first launch (expected for any
   unsigned indie `.exe` — click "More info" → "Run anyway"), unless you code-sign it yourself.
 
+### When Instagram asks for a login (cookies)
+
+Instagram increasingly gates posts — especially plain `/p/...` links, less so `/reel/...` — behind a
+logged-in session even for anonymous viewing. yt-dlp reports this as `Instagram sent an empty media
+response...`, which the app surfaces as "Instagram is requiring a logged-in session to view this post."
+Fix it by pointing yt-dlp at a real, logged-in browser session's cookies:
+
+- **`npm run dev` / a hosted backend**: set the environment variable `YTDLP_COOKIES_BROWSER=chrome`
+  (or `firefox`, `edge`, `brave`, `safari` — whichever browser you're logged into Instagram with, and
+  which must be installed on the same machine the backend runs on), or `YTDLP_COOKIES_FILE=/path/to/
+  cookies.txt` for a manually exported Netscape-format cookie file.
+- **The packaged `.exe`**: there's no terminal to set env vars in, so drop a `config.json` next to the
+  `.exe` instead (see `desktop/config.example.json`):
+
+  ```json
+  { "cookiesFromBrowser": "chrome" }
+  ```
+
+Either way this only works if that browser is actually logged into Instagram on the machine running the
+backend — it reads that browser's real cookie store, nothing is sent anywhere else.
+
 ## Template spec (locked)
 
 | Layer | Geometry | Notes |
